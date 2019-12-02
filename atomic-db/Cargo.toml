@@ -1,0 +1,8 @@
+[package]
+name = "atomic-db"
+version = "0.1.0"
+authors = ["Nathan Graule <solarliner@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+vst = "0.2.0"
