@@ -1,0 +1,22 @@
+os:
+  - windows
+  - linux
+  - osx
+language: rust
+rust:
+  - stable
+cache: cargo
+matrix:
+  fast_finish: true
+
+script: cargo build --release --verbose
+deploy:
+  provider: releases
+  api_key: $GITHUB_PAT
+  file: $TRAVIS_FILENAME
+  on:
+    tags: true
+  skip_cleanup: true
+before_deploy:
+  - export TRAVIS_FILENAME="ironblocks-${TRAVIS_OS_NAME}-${TRAVIS_TAG}.tar.gz"
+  - tar -czvf $TRAVIS_FILENAME target/release/ironblocks.*
