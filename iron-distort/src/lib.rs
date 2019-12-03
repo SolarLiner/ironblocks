@@ -1,22 +1,32 @@
+use std::fmt::{Debug, Error, Formatter};
 use std::sync::Arc;
 
 use vst::buffer::AudioBuffer;
 use vst::plugin::{Info, Plugin, PluginParameters};
 use vst::plugin_main;
+use vst::util::AtomicFloat;
 
 use atomic_db::AtomicDecibel;
 
+type ProcessFn = dyn Fn(f32) -> f32;
+
+const MAX_DRIVE: f32 = 100.0;
 const MAX_DRIVE_DB: f32 = 40.0;
+
+struct DistortionFunction {
+    name: String,
+    func: dyn Fn(Arc<DistortParameters>, f32) -> f32,
+}
 
 #[derive(Default, Debug)]
 struct IronDistort {
     params: Arc<DistortParameters>,
 }
 
-#[derive(Debug, Default)]
 struct DistortParameters {
     drive: AtomicDecibel,
     out_gain: AtomicDecibel,
+    fnidx: AtomicFloat,
 }
 
 impl IronDistort {
@@ -38,7 +48,7 @@ impl Plugin for IronDistort {
             version: 1,
             inputs: 2,
             outputs: 2,
-            parameters: 2,
+            parameters: 3,
             category: vst::plugin::Category::Effect,
             unique_id: -4432,
             ..Default::default()
@@ -46,6 +56,17 @@ impl Plugin for IronDistort {
     }
 
     fn process(&mut self, buffer: &mut AudioBuffer<f32>) {
+        let drive = self.params.drive.get_linear().max(1e-10);
+        let r#fn = match self.params.fnidx.get() {
+            0.0..=0.33 => Box::new(move |p: f32| (p * drive).tanh() / drive.tanh().max(1e-10)) as Box<ProcessFn>,
+            0.33..=0.67 => Box::new(move |p: f32| (p * drive).sin() / drive.min(1.0).sin().max(1e-10)) as Box<ProcessFn>,
+            0.67..=1.0 => Box::new(move |p: f32| {
+                let sign = if p > 0.0 { 1.0 } else { -1.0 };
+                let val = ((p * drive).abs() + 1.0).ln() / (drive + 1.0).ln().max(1e-10);
+                sign * val
+            }) as Box<ProcessFn>,
+            _ => Box::new(|p| p) as Box<ProcessFn>,
+        };
         let (inputs, outputs) = buffer.split();
         if inputs.len() < 2 || outputs.len() < 2 {
             return;
@@ -54,11 +75,10 @@ impl Plugin for IronDistort {
         let stereo_in = l[0].iter().zip(r[0].iter());
         let (mut l, mut r) = outputs.split_at_mut(1);
         let stereo_out = l[0].iter_mut().zip(r[0].iter_mut());
-        let drive = self.params.drive.get_linear().max(1e-10);
         let out_gain = self.params.out_gain.get_linear();
         for ((lin, rin), (lout, rout)) in stereo_in.zip(stereo_out) {
-            *lout = ((*lin * drive).tanh() / drive.min(1.0)) * out_gain;
-            *rout = ((*rin * drive).tanh() / drive.min(1.0)) * out_gain;
+            *lout = r#fn(*lin) * out_gain;
+            *rout = r#fn(*rin) * out_gain;
         }
     }
 
@@ -68,11 +88,12 @@ impl Plugin for IronDistort {
 }
 
 impl PluginParameters for DistortParameters {
-    fn get_parameter_label(&self, index: i32) -> String {
+    fn get_parameter_name(&self, index: i32) -> String {
         match index {
-            0 => "Drive".to_owned(),
-            1 => "Out Gain".to_owned(),
-            _ => "Not Implemented".to_owned(),
+            0 => format!("Drive"),
+            1 => format!("Out Gain"),
+            2 => format!("Dist. function"),
+            _ => format!("Not Implemented"),
         }
     }
 
@@ -80,18 +101,21 @@ impl PluginParameters for DistortParameters {
         match index {
             0 => format!("{}", self.drive),
             1 => format!("{}", self.out_gain),
+            2 => match self.fnidx.get() {
+                0.0..=0.33 => format!("Hyp. Tengant"),
+                0.33..=0.67 => format!("Sine"),
+                0.67..=1.0 => format!("Log"),
+                x => format!("Unknown range {:.2}", x)
+            }
             _ => format!("Not Implemented"),
         }
-    }
-
-    fn get_parameter_name(&self, index: i32) -> String {
-        self.get_parameter_label(index)
     }
 
     fn get_parameter(&self, index: i32) -> f32 {
         match index {
             0 => self.drive.get() / MAX_DRIVE_DB,
             1 => self.out_gain.get_linear(),
+            2 => self.fnidx.get(),
             _ => unreachable!(),
         }
     }
@@ -100,29 +124,33 @@ impl PluginParameters for DistortParameters {
         match index {
             0 => self.drive.set(value * MAX_DRIVE_DB),
             1 => self.out_gain.set_linear(value),
+            2 => self.fnidx.set(value),
             _ => (),
         }
     }
 
-    fn can_be_automated(&self, _index: i32) -> bool {
-        true
+    fn can_be_automated(&self, index: i32) -> bool {
+        match index {
+            0 | 1 => true,
+            _ => false
+        }
     }
 }
 
-fn map_param_db_range(val: f32) -> f32 {
-    let out_min = -48.0;
-    let out_max = 48.0;
-    let out_range = out_max - out_min;
-    let in_range = 1000.0;
-    (val / in_range) * out_range + out_min
+impl Default for DistortParameters {
+    fn default() -> Self {
+        Self {
+            fnidx: AtomicFloat::new(0.0),
+            drive: AtomicDecibel::new(0.0),
+            out_gain: AtomicDecibel::new(0.0),
+        }
+    }
 }
 
-fn map_db_param_range(val: &AtomicDecibel) -> f32 {
-    let out_range = 1000.0;
-    let in_min = -48.0;
-    let in_max = 48.0;
-    let in_range = in_max - in_min;
-    ((val.get() - in_min) / in_range) * out_range
+impl Debug for DistortParameters {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "DistortParameters(<Atomic Values>)")
+    }
 }
 
 plugin_main!(IronDistort);
