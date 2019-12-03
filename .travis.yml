@@ -17,7 +17,7 @@ deploy:
   on:
     tags: true
   skip_cleanup: true
-after_script:
+before_deploy:
   - >
     if [ "$TRAVIS_OS_NAME" = "osx" ]; then
       export TRAVIS_FILENAME=iron-distort.vst
