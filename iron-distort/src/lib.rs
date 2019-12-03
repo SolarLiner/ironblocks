@@ -6,7 +6,7 @@ use vst::plugin_main;
 
 use atomic_db::AtomicDecibel;
 
-const MAX_DRIVE: f32 = 100.0;
+const MAX_DRIVE_DB: f32 = 40.0;
 
 #[derive(Default, Debug)]
 struct IronDistort {
@@ -78,8 +78,8 @@ impl PluginParameters for DistortParameters {
 
     fn get_parameter_text(&self, index: i32) -> String {
         match index {
-            0 => format!("Drive: {}", self.drive),
-            1 => format!("Out Gain: {}", self.out_gain),
+            0 => format!("{}", self.drive),
+            1 => format!("{}", self.out_gain),
             _ => format!("Not Implemented"),
         }
     }
@@ -90,7 +90,7 @@ impl PluginParameters for DistortParameters {
 
     fn get_parameter(&self, index: i32) -> f32 {
         match index {
-            0 => self.drive.get_linear() / MAX_DRIVE,
+            0 => self.drive.get() / MAX_DRIVE_DB,
             1 => self.out_gain.get_linear(),
             _ => unreachable!(),
         }
@@ -98,7 +98,7 @@ impl PluginParameters for DistortParameters {
 
     fn set_parameter(&self, index: i32, value: f32) {
         match index {
-            0 => self.drive.set_linear(value * MAX_DRIVE),
+            0 => self.drive.set(value * MAX_DRIVE_DB),
             1 => self.out_gain.set_linear(value),
             _ => (),
         }

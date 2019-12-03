@@ -36,7 +36,7 @@ impl AsRef<AtomicFloat> for AtomicDecibel {
 
 impl Display for AtomicDecibel {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{} dB", self.get())
+        write!(f, "{:.2} dB", self.get())
     }
 }
 
