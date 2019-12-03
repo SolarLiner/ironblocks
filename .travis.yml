@@ -21,7 +21,7 @@ before_deploy:
   - >
     if [ "$TRAVIS_OS_NAME" = "osx" ]; then
       export TRAVIS_FILENAME=iron-distort.vst
-      ./osx_bundle.sh iron-distort target/release/libirondistort.dylib;
+      bash osx_bundle.sh iron-distort target/release/libirondistort.dylib;
     fi
   - if [ "$TRAVIS_OS_NAME" = "windows" ]; then export TRAVIS_FILENAME=target/release/irondistort.dll; fi
   - if [ "$TRAVIS_OS_NAME" = "linux" ]; then export TRAVIS_FILENAME=target/release/libirondistort.so; fi
